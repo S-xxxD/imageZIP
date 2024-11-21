@@ -1,0 +1,9 @@
+{
+  "sigma_list": [10, 30, 60],
+  "G": 1.5,
+  "b": 5,
+  "alpha": 50,
+  "beta": 20,
+  "low_clip": 0.05,
+  "high_clip": 0.95
+}
