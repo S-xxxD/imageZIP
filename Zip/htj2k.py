@@ -1,107 +1,93 @@
-import json
 import cv2
-import os
+import numpy as np
 import subprocess
+import os
 
-def merge_roi_and_non_roi(image, roi_coords, output_file, htj2k_quality=10):
+def compress_image_htj2k(image, output_path, rate=20):
     """
-    合并 ROI 和非 ROI 数据为单个文件。
-    :param image: 输入图像。
-    :param roi_coords: ROI 区域的坐标 (x, y, w, h)。
-    :param output_file: 合并后的文件路径。
-    :param htj2k_quality: HTJ2K 压缩质量。
+    使用 HTJ2K 对图像进行压缩
+    Args:
+        image: 输入图像 (BGR 格式)。
+        output_path: 输出压缩文件路径 (如 .j2k)。
+        rate: 压缩码率，值越小压缩越强。
     """
-    x, y, w, h = roi_coords
+    # 保存原始图像为临时文件 (PGM 或 PPM 格式是 JPEG 2000 支持的输入格式)
+    temp_input = "temp_input.ppm"
+    cv2.imwrite(temp_input, image)
 
-    # 提取 ROI
-    roi = image[y:y + h, x:x + w]
-    _, roi_data = cv2.imencode('.png', roi)
-
-    # 创建非 ROI 掩码
-    mask = np.ones(image.shape[:2], dtype=np.uint8)
-    mask[y:y + h, x:x + w] = 0
-
-    # 提取非 ROI
-    non_roi = cv2.bitwise_and(image, image, mask=mask)
-    temp_non_roi_path = "temp_non_roi.png"
-    cv2.imwrite(temp_non_roi_path, non_roi)
-
-    # 使用 OpenJPEG 压缩非 ROI
-    non_roi_output = "non_roi_compressed.j2k"
-    command = [
-        "opj_compress",
-        "-i", temp_non_roi_path,
-        "-o", non_roi_output,
-        "-r", str(htj2k_quality)
+    # 使用 OpenJPEG 的 opj_compress 进行 HTJ2K 压缩
+    compress_command = [
+        "opj_compress",  # OpenJPEG 命令行工具
+        "-i", temp_input,  # 输入图像
+        "-o", output_path,  # 输出 HTJ2K 文件
+        "-r", str(rate)  # 压缩码率
     ]
-    subprocess.run(command, check=True)
 
-    # 读取 HTJ2K 数据
-    with open(non_roi_output, "rb") as f:
-        non_roi_data = f.read()
-
-    # 删除临时文件
-    os.remove(temp_non_roi_path)
-    os.remove(non_roi_output)
-
-    # 创建元数据
-    metadata = {
-        "roi_coords": roi_coords,
-        "roi_size": len(roi_data),
-        "non_roi_size": len(non_roi_data),
-    }
-    metadata_bytes = json.dumps(metadata).encode('utf-8')
-
-    # 写入到单个文件
-    with open(output_file, "wb") as f:
-        f.write(len(metadata_bytes).to_bytes(4, 'big'))  # 写入元数据长度
-        f.write(metadata_bytes)                         # 写入元数据
-        f.write(roi_data)                               # 写入 ROI 数据
-        f.write(non_roi_data)                           # 写入非 ROI 数据
-
-    print(f"Combined file saved at {output_file}")
+    try:
+        subprocess.run(compress_command, check=True)
+        print(f"Compressed image saved to {output_path}")
+    except subprocess.CalledProcessError as e:
+        print("Error during HTJ2K compression:", e)
+    finally:
+        # 删除临时文件
+        if os.path.exists(temp_input):
+            os.remove(temp_input)
 
 
-def extract_and_decode_combined_file(input_file):
+def decompress_image_htj2k(input_path):
     """
-    从合并文件中分离 ROI 和非 ROI 数据。
-    :param input_file: 合并文件路径。
+    使用 HTJ2K 对压缩文件解压缩回图像。
+    Args:
+        input_path: 输入的压缩文件路径 (.j2k)。
+    Returns:
+        解压缩后的图像。
     """
-    with open(input_file, "rb") as f:
-        metadata_size = int.from_bytes(f.read(4), 'big')  # 读取元数据长度
-        metadata_bytes = f.read(metadata_size)           # 读取元数据
-        metadata = json.loads(metadata_bytes.decode('utf-8'))
+    # 输出的临时解压文件
+    temp_output = "temp_output.ppm"
 
-        roi_size = metadata["roi_size"]
-        non_roi_size = metadata["non_roi_size"]
-        roi_coords = metadata["roi_coords"]
+    # 使用 OpenJPEG 的 opj_decompress 解压
+    decompress_command = [
+        "opj_decompress",  # OpenJPEG 解压工具
+        "-i", input_path,  # 输入压缩文件
+        "-o", temp_output  # 输出解压图像
+    ]
 
-        # 读取 ROI 数据
-        roi_data = f.read(roi_size)
-        with open("decoded_roi.png", "wb") as roi_file:
-            roi_file.write(roi_data)
+    try:
+        subprocess.run(decompress_command, check=True)
+        print(f"Decompressed image saved to {temp_output}")
+        # 读取解压后的图像
+        decompressed_image = cv2.imread(temp_output)
+        return decompressed_image
+    except subprocess.CalledProcessError as e:
+        print("Error during HTJ2K decompression:", e)
+        return None
+    finally:
+        # 删除临时文件
+        if os.path.exists(temp_output):
+            os.remove(temp_output)
 
-        # 读取非 ROI 数据
-        non_roi_data = f.read(non_roi_size)
-        with open("decoded_non_roi.j2k", "wb") as non_roi_file:
-            non_roi_file.write(non_roi_data)
 
-    print("ROI and Non-ROI data extracted successfully.")
-    print(f"ROI saved as 'decoded_roi.png', Non-ROI saved as 'decoded_non_roi.j2k'.")
-
-
-# 示例运行
-if __name__ == "__main__":
-    # 输入图像路径
-    image_path = "input.jpg"
+# 示例调用
+def main(image_path):
+    # 读取原始图像
     image = cv2.imread(image_path)
+    if image is None:
+        print("Error loading image!")
+        return
 
-    # 定义 ROI 区域
-    roi_coords = (100, 100, 200, 200)  # 替换为实际 ROI 坐标 (x, y, w, h)
+    # HTJ2K 压缩
+    compressed_path = "compressed_image.j2k"
+    compress_image_htj2k(image, compressed_path, rate=10)  # 压缩码率为10
 
-    # 合并输出文件
-    combined_file = "combined_image.bin"
-    merge_roi_and_non_roi(image, roi_coords, combined_file)
+    # 解压缩
+    decompressed_image = decompress_image_htj2k(compressed_path)
+    if decompressed_image is not None:
+        # 显示解压后的图像
+        cv2.imshow("Decompressed Image", decompressed_image)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
 
-    # 提取并解码
-    extract_and_decode_combined_file(combined_file)
+
+if __name__ == "__main__":
+    image_path = "D:/PycharmProjects/Match/imageZIP/image/CO2.jpg"  # 替换为你的图像路径
+    main(image_path)
