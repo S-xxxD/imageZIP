@@ -52,9 +52,7 @@ def wavelet_transform(image):
 
 # 3. 对ROI区域进行增强，ROI外区域进行压缩
 def process_image(LL, LH, HL, HH, roi_coords):
-    # 获取ROI区域的坐标
     x, y, w, h = roi_coords
-
     for i in range(3):  # 对每个通道处理
         # 提取每个通道的小波系数
         roi_LL = LL[i][y:y + h, x:x + w]
@@ -63,10 +61,21 @@ def process_image(LL, LH, HL, HH, roi_coords):
         roi_HH = HH[i][y:y + h, x:x + w]
 
         # 1. 增强ROI区域（提高细节）
-        roi_LL *= 1.5  # 增强低频区域
-        roi_LH *= 1.4  # 增强水平高频区域
-        roi_HL *= 1.4  # 增强垂直高频区域
-        roi_HH *= 1.4  # 增强对角高频区域
+        if i == 0:
+            roi_LL *= 1.5  # 增强低频区域
+            roi_LH *= 1.4  # 增强水平高频区域
+            roi_HL *= 1.4  # 增强垂直高频区域
+            roi_HH *= 1.4  # 增强对角高频区域
+        elif i == 1:
+            roi_LL *= 1.6  # 对绿色通道应用不同的增强比例
+            roi_LH *= 1.3
+            roi_HL *= 1.3
+            roi_HH *= 1.3
+        else:
+            roi_LL *= 1.4  # 对蓝色通道应用不同的增强比例
+            roi_LH *= 1.5
+            roi_HL *= 1.2
+            roi_HH *= 1.3
 
         # 将增强后的ROI区域放回原小波系数
         LL[i][y:y + h, x:x + w] = roi_LL
@@ -75,21 +84,17 @@ def process_image(LL, LH, HL, HH, roi_coords):
         HH[i][y:y + h, x:x + w] = roi_HH
 
         # 2. 对ROI外区域进行压缩（降低细节）
-        # 对ROI外的区域进行小波系数的压缩（例如，降低它们的幅度）
-        # ROI外区域坐标
         non_roi_y = [0, y, y + h, LL[i].shape[0]]
         non_roi_x = [0, x, x + w, LL[i].shape[1]]
 
-        # 处理外区域的小波系数：通过减少幅度进行压缩
         for j in range(0, len(non_roi_y)-1):
             for k in range(0, len(non_roi_x)-1):
-                # 对每个块进行压缩操作，减少系数值
                 LL[i][non_roi_y[j]:non_roi_y[j+1], non_roi_x[k]:non_roi_x[k+1]] *= 0.5
                 LH[i][non_roi_y[j]:non_roi_y[j+1], non_roi_x[k]:non_roi_x[k+1]] *= 0.5
                 HL[i][non_roi_y[j]:non_roi_y[j+1], non_roi_x[k]:non_roi_x[k+1]] *= 0.5
                 HH[i][non_roi_y[j]:non_roi_y[j+1], non_roi_x[k]:non_roi_x[k+1]] *= 0.5
 
-        # 限制增强后的小波系数范围，防止亮度过高（避免过曝）
+        # 限制增强后的小波系数范围
         LL[i] = np.clip(LL[i], 0, 255)
         LH[i] = np.clip(LH[i], 0, 255)
         HL[i] = np.clip(HL[i], 0, 255)
@@ -239,5 +244,5 @@ def main(image_path):
 
 
 if __name__ == "__main__":
-    image_path = 'D:/PycharmProjects/Match/image/Co2.jpg'  # 替换为你的图像路径
+    image_path = 'D:/PycharmProjects/Match/imageZIP/image/ROV.jpg'  # 替换为你的图像路径
     main(image_path)
